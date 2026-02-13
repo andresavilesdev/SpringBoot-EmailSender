@@ -1,11 +1,7 @@
 package com.spring.mail.sender.mail.service;
 
-import java.io.File;
+import com.spring.mail.sender.mail.domain.EmailDto;
 
 public interface IEmailService {
-
-    void sendEmail(String[] toUser, String subject, String body);
-
-    void sendEmailWithFile(String[] toUser, String subject, String body, File file);
-
+    void sendContactEmail(EmailDto emailDto);
 }
