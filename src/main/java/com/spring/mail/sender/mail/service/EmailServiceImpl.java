@@ -1,72 +1,62 @@
 package com.spring.mail.sender.mail.service;
 
 import com.spring.mail.sender.mail.domain.EmailDto;
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.Map;
 
 @Service
 public class EmailServiceImpl implements IEmailService {
 
-    private static final Logger logger = LoggerFactory.getLogger(EmailServiceImpl.class);
+    private final ObjectMapper objectMapper;
+    private final HttpClient httpClient;
 
-    private final JavaMailSender mailSender;
+    @Value("${resend.api-key}")
+    private String resendApiKey;
+
+    @Value("${resend.from}")
+    private String resendFrom;
 
     @Value("${contact.mail.to}")
     private String contactMailTo;
 
-    @Value("${spring.mail.host}")
-    private String mailHost;
-
-    @Value("${spring.mail.port}")
-    private int mailPort;
-
-    @Value("${spring.mail.username}")
-    private String mailUsername;
-
-    public EmailServiceImpl(JavaMailSender mailSender) {
-        this.mailSender = mailSender;
-        logger.info("=== DEBUG: EmailServiceImpl initialized ===");
-        logger.info("Mail Host: {}", mailHost);
-        logger.info("Mail Port: {}", mailPort);
-        logger.info("Mail Username: {}", mailUsername != null ? "SET (" + mailUsername.length() + " chars)" : "NULL");
+    public EmailServiceImpl(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+        this.httpClient = HttpClient.newHttpClient();
     }
 
     @Override
     public void sendContactEmail(EmailDto emailDto) {
-        logger.info("=== DEBUG: Starting sendContactEmail ===");
-        logger.info("Contact Mail To: {}", contactMailTo != null ? "SET (" + contactMailTo.length() + " chars)" : "NULL");
-        logger.info("Email from: {}", emailDto.email());
-        logger.info("Email subject: {}", emailDto.subject());
-        
         try {
-            MimeMessage mimeMessage = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, StandardCharsets.UTF_8.name());
+            Map<String, Object> body = Map.of(
+                    "from", resendFrom,
+                    "to", new String[]{contactMailTo},
+                    "subject", "Portfolio: " + emailDto.subject(),
+                    "html", buildHtmlTemplate(emailDto),
+                    "reply_to", emailDto.email()
+            );
 
-            String fromAddress = contactMailTo;
-            logger.info("Setting from address: {}", fromAddress);
-            
-            helper.setFrom(fromAddress);
-            helper.setTo(contactMailTo);
-            helper.setReplyTo(emailDto.email());
-            helper.setSubject("Portfolio: " + emailDto.subject());
-            helper.setText(buildHtmlTemplate(emailDto), true);
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.resend.com/emails"))
+                    .header("Authorization", "Bearer " + resendApiKey)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .build();
 
-            logger.info("About to send email...");
-            mailSender.send(mimeMessage);
-            logger.info("=== DEBUG: Email sent successfully! ===");
-        } catch (MessagingException e) {
-            logger.error("MessagingException ERROR: {}", e.getMessage(), e);
-            throw new RuntimeException("Error sending contact email: " + e.getMessage());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new RuntimeException("Resend API error (" + response.statusCode() + "): " + response.body());
+            }
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
-            logger.error("General ERROR in sendContactEmail: {}", e.getMessage(), e);
             throw new RuntimeException("Error sending contact email: " + e.getMessage());
         }
     }
