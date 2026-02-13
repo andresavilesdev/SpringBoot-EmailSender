@@ -3,6 +3,8 @@ package com.spring.mail.sender.mail.service;
 import com.spring.mail.sender.mail.domain.EmailDto;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -13,29 +15,58 @@ import java.nio.charset.StandardCharsets;
 @Service
 public class EmailServiceImpl implements IEmailService {
 
+    private static final Logger logger = LoggerFactory.getLogger(EmailServiceImpl.class);
+
     private final JavaMailSender mailSender;
 
     @Value("${contact.mail.to}")
     private String contactMailTo;
 
+    @Value("${spring.mail.host}")
+    private String mailHost;
+
+    @Value("${spring.mail.port}")
+    private int mailPort;
+
+    @Value("${spring.mail.username}")
+    private String mailUsername;
+
     public EmailServiceImpl(JavaMailSender mailSender) {
         this.mailSender = mailSender;
+        logger.info("=== DEBUG: EmailServiceImpl initialized ===");
+        logger.info("Mail Host: {}", mailHost);
+        logger.info("Mail Port: {}", mailPort);
+        logger.info("Mail Username: {}", mailUsername != null ? "SET (" + mailUsername.length() + " chars)" : "NULL");
     }
 
     @Override
     public void sendContactEmail(EmailDto emailDto) {
+        logger.info("=== DEBUG: Starting sendContactEmail ===");
+        logger.info("Contact Mail To: {}", contactMailTo != null ? "SET (" + contactMailTo.length() + " chars)" : "NULL");
+        logger.info("Email from: {}", emailDto.email());
+        logger.info("Email subject: {}", emailDto.subject());
+        
         try {
             MimeMessage mimeMessage = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, StandardCharsets.UTF_8.name());
 
-            helper.setFrom(contactMailTo);
+            String fromAddress = contactMailTo;
+            logger.info("Setting from address: {}", fromAddress);
+            
+            helper.setFrom(fromAddress);
             helper.setTo(contactMailTo);
             helper.setReplyTo(emailDto.email());
             helper.setSubject("Portfolio: " + emailDto.subject());
             helper.setText(buildHtmlTemplate(emailDto), true);
 
+            logger.info("About to send email...");
             mailSender.send(mimeMessage);
+            logger.info("=== DEBUG: Email sent successfully! ===");
         } catch (MessagingException e) {
+            logger.error("MessagingException ERROR: {}", e.getMessage(), e);
+            throw new RuntimeException("Error sending contact email: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("General ERROR in sendContactEmail: {}", e.getMessage(), e);
             throw new RuntimeException("Error sending contact email: " + e.getMessage());
         }
     }
